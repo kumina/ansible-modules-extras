@@ -55,6 +55,26 @@ options:
       - XML document used with the define command
     required: false
     default: null
+  xml_secure:
+    description:
+      - libvirt VIR_DOMAIN_XML_SECURE flag, only used for get_xml
+    required: false
+    default: 0
+  xml_inactive:
+    description:
+      - libvirt VIR_DOMAIN_XML_INACTIVE flag, only used for get_xml
+    required: false
+    default: 0
+  xml_update_cpu:
+    description:
+      - libvirt VIR_DOMAIN_XML_UPDATE_CPU flag, only used for get_xml
+    required: false
+    default: 0
+  xml_migratable:
+    description:
+      - libvirt VIR_DOMAIN_XML_MIGRATABLE flag, only used for get_xml
+    required: false
+    default: 0
 requirements: [ "libvirt" ]
 author: Michael DeHaan, Seth Vidal
 '''
@@ -197,9 +217,9 @@ class LibvirtConnection(object):
     def get_type(self):
         return self.conn.getType()
 
-    def get_xml(self, vmid):
+    def get_xml(self, vmid, flags=0):
         vm = self.conn.lookupByName(vmid)
-        return vm.XMLDesc(0)
+        return vm.XMLDesc(flags)
 
     def get_maxVcpus(self, vmid):
         vm = self.conn.lookupByName(vmid)
@@ -359,14 +379,14 @@ class Virt(object):
         self.__get_conn()
         return self.conn.get_status(vmid)
 
-    def get_xml(self, vmid):
+    def get_xml(self, vmid, flags=0):
         """
         Receive a Vm id as input
         Return an xml describing vm config returned by a libvirt call
         """
 
         self.__get_conn()
-        return self.conn.get_xml(vmid)
+        return self.conn.get_xml(vmid, flags)
 
     def get_maxVcpus(self, vmid):
         """
@@ -393,11 +413,17 @@ class Virt(object):
 
 def core(module):
 
-    state      = module.params.get('state', None)
-    guest      = module.params.get('name', None)
-    command    = module.params.get('command', None)
-    uri        = module.params.get('uri', None)
-    xml        = module.params.get('xml', None)
+    state = module.params.get('state', None)
+    guest = module.params.get('name', None)
+    command = module.params.get('command', None)
+    uri = module.params.get('uri', None)
+    xml = module.params.get('xml', None)
+    xml_secure = 1 if module.params.get('xml_secure', False) else 0
+    xml_inactive = 2 if module.params.get('xml_inactive', False) else 0
+    xml_update_cpu = 4 if module.params.get('xml_update_cpu', False) else 0
+    xml_migratable = 8 if module.params.get('xml_migratable', False) else 0
+
+    xml_flags = xml_secure + xml_inactive + xml_update_cpu + xml_migratable
 
     v = Virt(uri, module)
     res = {}
@@ -450,7 +476,10 @@ def core(module):
                     v.define(xml)
                     res = {'changed': True, 'created': guest}
                 return VIRT_SUCCESS, res
-            res = getattr(v, command)(guest)
+            elif command == 'get_xml':
+                res = getattr(v, command)(guest, xml_flags)
+            else:
+                res = getattr(v, command)(guest)
             if type(res) != dict:
                 res = { command: res }
             return VIRT_SUCCESS, res
@@ -474,6 +503,10 @@ def main():
         command = dict(choices=ALL_COMMANDS),
         uri = dict(default='qemu:///system'),
         xml = dict(),
+        xml_secure = dict(default='no', choices=BOOLEANS, type='bool'),
+        xml_inactive = dict(default='no', choices=BOOLEANS, type='bool'),
+        xml_update_cpu = dict(default='no', choices=BOOLEANS, type='bool'),
+        xml_migratable = dict(default='no', choices=BOOLEANS, type='bool'),
     ))
 
     rc = VIRT_SUCCESS
